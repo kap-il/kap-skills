@@ -9,7 +9,7 @@
     {
       "name": "mtask",
       "source": "./plugins/mtask",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "description": "Multi-agent task orchestration: /mtask for parallel sub-agent orchestration with worktrees, SSOT-anchored plans, and a single integrity gate. /mtask-toggle for session-scoped routing where every prompt becomes an mtask invocation until disabled.",
       "category": "engineering",
       "keywords": ["orchestration", "parallel", "sub-agents", "multi-agent", "delegation", "investigation", "worktrees"]

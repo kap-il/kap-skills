@@ -1,6 +1,6 @@
 {
   "name": "mtask",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Multi-agent task orchestration for Claude Code. Includes /mtask (parallel sub-agent orchestration with worktrees, SSOT-anchored plans, monitored execution, single-merge-point integrity) and /mtask-toggle (session-scoped routing toggle that sends every prompt through mtask automatically).",
   "author": {
     "name": "kap-il",
