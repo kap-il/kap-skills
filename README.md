@@ -7,13 +7,13 @@ Claude Code skills by [@kap-il](https://github.com/kap-il), distributed as a plu
 In Claude Code:
 
 ```
-/plugin marketplace add kap-il/skills
+/plugin marketplace add kap-il/kap-skills
 ```
 
 Then install any plugin from the marketplace:
 
 ```
-/plugin install mtask@kap-il-skills
+/plugin install mtask@kap-skills
 ```
 
 Verify with `/plugin` — installed plugins should be listed.
