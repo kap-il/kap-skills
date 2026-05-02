@@ -1,0 +1,23 @@
+# mtask runtime artifacts (created when the skill runs in a project,
+# not in this repo, but listed defensively)
+.mtask/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/

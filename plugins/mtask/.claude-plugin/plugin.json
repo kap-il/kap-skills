@@ -1,0 +1,13 @@
+{
+  "name": "mtask",
+  "version": "0.5.0",
+  "description": "Multi-agent task orchestration for Claude Code. Includes /mtask (parallel sub-agent orchestration with worktrees, SSOT-anchored plans, monitored execution, single-merge-point integrity) and /mtask-toggle (session-scoped routing toggle that sends every prompt through mtask automatically).",
+  "author": {
+    "name": "kap-il",
+    "url": "https://github.com/kap-il"
+  },
+  "homepage": "https://github.com/kap-il/skills",
+  "repository": "https://github.com/kap-il/skills",
+  "license": "MIT",
+  "keywords": ["orchestration", "parallel", "sub-agents", "multi-agent", "delegation", "investigation", "worktrees", "hooks", "toggle"]
+}
