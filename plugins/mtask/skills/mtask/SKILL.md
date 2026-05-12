@@ -344,6 +344,8 @@ End by asking if the operator wants any follow-up investigation or to invoke `/m
 
 You are the **boss agent**. Dev agents (and sub-bosses, if `--del`) are sub-agents you spawn.
 
+> **Boss never writes code.** You plan, spawn, monitor, verify, and merge agent-produced worktrees. You do **not** edit files, fix bugs, resolve merge conflicts by hand, patch test failures, or touch locked files. Every line of code that lands in the repo comes from an agent's worktree. If something needs fixing — anything, ever — you spawn an agent to fix it. Re-running the mtask protocol (re-plan, decompose, spawn) is the *only* repair mechanism. "I'll just fix this one quick thing" is the failure mode this skill exists to prevent.
+
 ### Step 1: Plan and gather context
 
 Produce a written plan at `.mtask/plan.md` (create the directory). The plan must include, in this order:
@@ -353,7 +355,7 @@ Produce a written plan at `.mtask/plan.md` (create the directory). The plan must
 - **Task list** — every discrete unit of work, numbered
 - **Agent assignments** — which agent owns which tasks (and which sub-boss owns which agents, if `--del`). All leaf agents share the run's leaf model and effort; sub-bosses share the boss's. Example: `Agent A1: tasks 1,2 — files: src/auth/*` and the model is implicit from Run settings.
 - **File ownership** — which files each agent may write to
-- **Locked files** — files no agent may modify (boss merges only)
+- **Locked files** — files no parallel dev agent may modify. Boss does **not** edit these either. When a locked file needs changing, boss spawns a dedicated serialized agent (post-parallel-phase) that owns that file for the duration of its slice.
 - **Dependencies** — which tasks block which
 - **Merge order** — the sequence the top boss will use to integrate work
 - **Live state** — empty at planning time, populated by agents as they work. Each entry includes: task ID, status (in-progress / done / blocked), files actually touched, key decisions made, deviations from the plan. This is the single source of truth for project state — agents sift every change up here.
@@ -378,7 +380,7 @@ Both `.mtask/plan.md` and `.mtask/context.md` are visible to every agent at ever
 
 Resolve the agent count first per the flag rules above, then decompose using this priority order. Rule 1 is most important; only consider rule 2 once rule 1 is satisfied; only consider rule 3 once rules 1 and 2 are satisfied:
 
-1. **Avoid collisions first (top priority).** No two agents should be writing to the same file. If a file is touched by multiple logical tasks, either: (a) assign it to one agent who handles all touches, or (b) lock it and have boss handle it post-merge.
+1. **Avoid collisions first (top priority).** No two agents should be writing to the same file. If a file is touched by multiple logical tasks, either: (a) assign it to one agent who handles all touches, or (b) lock it and spawn a serialized cleanup agent (post-parallel-phase) to integrate the touches. **Boss never owns "files I'll fix up after merge" — boss owns spawning whoever does.**
 2. **Then split by component.** Group tasks by natural seams — module, package, layer, feature. An agent should own a coherent slice, not scattered diffs.
 3. **Then balance time complexity (lowest priority).** Once collisions and components are settled, even out the workload so the slowest agent isn't 10x the fastest.
 
@@ -425,27 +427,43 @@ While agents work, the boss (and any sub-boss) **streams and gates** their outpu
 
 Sub-bosses do this for their own dev agents; the top boss does it for sub-bosses.
 
-### Step 6: Merge
+### Step 6: Verify and merge
 
 **Only the top boss merges.** Dev agents and sub-bosses never merge into the main branch.
 
-For each completed worktree, in the merge order from the plan:
+**Boss does not write code at this step.** Merge is the one filesystem mutation a boss is allowed to perform — running `git merge` on an agent-produced branch. Every other repair (a defect found in review, a failing test, a merge conflict, a locked-file change) goes through respawning an agent or re-running the mtask protocol. The boss has exactly two verbs in this step: **accept** (merge it) or **reject** (respawn / re-plan).
 
-1. **Verify against SSOT.** Re-read **operator vision** and the agent's task assignment. Read the agent's **Live state** entry: do the files touched, decisions made, and deviations stay within scope of what the user actually asked for? Three outcomes:
-   - **In scope** → proceed to step 2.
-   - **Clearly out of scope and unwanted** (silent scope creep, hallucinated requirements, unrelated refactors) → reject the worktree, respawn the agent with a tightened brief or absorb the deviation into a re-plan.
+For each completed worktree, in the merge order from the plan, run each gate. **Any gate failure exits to the [Repair loop](#repair-loop) below — boss does not patch the issue itself.**
+
+1. **SSOT gate.** Re-read **operator vision** and the agent's task assignment. Read the agent's **Live state** entry: do the files touched, decisions made, and deviations stay within scope of what the user actually asked for? Outcomes:
+   - **In scope** → proceed to gate 2.
+   - **Clearly out of scope and unwanted** (silent scope creep, hallucinated requirements, unrelated refactors) → **reject** → Repair loop.
    - **Out of scope but plausibly valuable** (e.g. agent noticed a bug adjacent to its task and fixed it; agent picked a different library that's actually better) → **stop and consult the operator.** Surface the deviation, the reasoning, and the diff. Wait for explicit go-ahead before merging. Do not assume good intent grants permission.
 
    Verification is not optional. A clean diff that drifts from intent is worse than a messy diff that stays on target.
-2. Review the diff for code quality, test coverage, and adherence to the agent's file ownership.
-3. Resolve any conflicts (these should be rare if decomposition was clean — frequent conflicts mean the plan was wrong; stop and re-plan).
-4. Merge into the main working branch.
-5. Run tests if a test command is known.
-6. Update `.mtask/plan.md` to mark the task done in **Live state**.
+2. **Quality gate.** Review the diff for code quality, test coverage, and adherence to the agent's file ownership. Defects (bugs, missing tests, unowned writes, dead code, stylistic violations) → **reject** → Repair loop.
+3. **Conflict gate.** Attempt the merge. If the merge applies cleanly, proceed. If there are conflicts of any kind → **abort the merge** → Repair loop. Boss does not edit conflicted files to resolve hunks; conflicts are a planning signal, not a manual-merge task.
+4. **Merge.** `git merge` the agent's branch into the main working branch. This is the only filesystem write the boss performs.
+5. **Test gate.** Run tests if a test command is known. Failures → **revert the merge** → Repair loop. Boss does not patch failing tests or production code.
+6. **Plan update.** Append a Live state entry marking the task done. This is a write to `.mtask/plan.md`, not to source code — the plan is bookkeeping, not the deliverable.
+
+#### Repair loop
+
+When any gate fails, the boss does **not** fix the problem. Instead:
+
+1. Capture the failure: which gate, which agent, what was observed (file refs, error messages, diff hunks, failing test names).
+2. Decide the response — one of:
+   - **Respawn the same agent** with a tightened brief that names the specific defect to fix. Same worktree, same task assignment, plus a "specifically also fix: …" addendum.
+   - **Spawn a dedicated fix-it agent** in a new worktree, scoped narrowly to the failure. Use this when the original agent has been discharged, or when the fix spans files outside the original agent's ownership.
+   - **Re-plan.** If failures keep recurring, or if multiple agents are colliding, the decomposition was wrong. Stop, edit the plan upstream (yes, the boss edits the plan — that's bookkeeping, not code), and restart from Step 2 with the new decomposition.
+3. Log the repair under **Boss attention**: timestamp, gate that failed, repair chosen, agent ID spawned.
+4. Return to Step 6 gate 1 once the repair agent finishes its worktree. Don't skip earlier gates — a repair can introduce new SSOT drift.
+
+The repair loop is the *only* path forward when verification fails. There is no "I'll just edit this one line" branch. If the boss finds itself reaching for `Edit` or `Write` on a source file, it has fallen off the protocol — stop, name what's wrong, and spawn an agent to address it.
 
 ### Step 7: Report
 
-Final report includes: what each agent did, what was merged, what tests passed, anything unresolved, and any locked-file changes the boss made directly.
+Final report includes: what each agent did, what was merged, what tests passed, anything unresolved, and the full repair log (every respawn, fix-it agent, and re-plan triggered by verification failures).
 
 ---
 
@@ -498,11 +516,11 @@ Top boss: <task>
     ├── Dev agent B1: <task-3>, files: [...]
     └── Dev agent B2: <task-4>, files: [...]
 
-Locked files (top-boss only): [...]
+Locked files (require serialized cleanup agent — no boss writes): [...]
 Merge order: A1, A2, B1, B2
 ```
 
-Every agent at every level reads this same file. File ownership and locks are global — a sub-boss cannot grant access to a top-boss-locked file.
+Every agent at every level reads this same file. File ownership and locks are global — a sub-boss cannot grant access to a top-boss-locked file, and **no boss at any level may write to a locked file directly**; locked files are always handled by spawned serialized agents.
 
 ### When `--del` doesn't fit
 
@@ -548,21 +566,22 @@ These rules apply to **every agent** — top boss, sub-bosses, and dev agents. B
 
 These apply to top boss and sub-bosses only:
 
-17. **Monitor agent streams; don't fire-and-forget.** Watch progress, block rule violations in real time, permit conforming changes. Agents wait briefly for permission on flagged actions.
-18. **Verify against SSOT at every merge or handback.** Before accepting a worktree, re-read operator vision and the agent's task assignment, then check the actual diff and Live state entry against them. Three outcomes: in-scope → proceed; clearly out-of-scope and unwanted → reject and respawn; **out-of-scope but plausibly valuable → consult the operator before merging**. Don't accept drift on the agent's behalf, even good drift. Orchestration without verification is just delegation.
-19. **Kill and respawn over heroic intervention.** If an agent goes sideways, kill it, tighten the task description in the plan, and respawn. Don't try to course-correct mid-stream past one or two nudges.
-20. **Re-plan over papering over.** If decomposition is producing collisions, scope creep, or merge conflicts, stop and re-plan. A bad plan compounds; a re-plan resets.
-21. **Never modify operator vision.** Even the top boss leaves it untouched. If the user's intent genuinely changed mid-execution, that's a separate `/mtask` invocation, not an in-flight edit. The vision section is the one piece of the plan that survives unchanged from start to finish.
+17. **Boss never writes code.** Boss reads, plans, decomposes, spawns, monitors, verifies, runs `git merge` on agent branches, and edits `.mtask/plan.md` for bookkeeping. That is the entire allowed action set. Boss does **not** edit source files, write fixes, hand-resolve merge conflicts, patch failing tests, or touch locked files. Every code change in the repo originates in an agent's worktree. If a fix is needed, spawn an agent — every time, no exceptions. The instant you reach for `Edit` or `Write` on a source file, you've broken the protocol; stop and spawn.
+18. **Monitor agent streams; don't fire-and-forget.** Watch progress, block rule violations in real time, permit conforming changes. Agents wait briefly for permission on flagged actions.
+19. **Verify against SSOT at every merge or handback.** Before accepting a worktree, re-read operator vision and the agent's task assignment, then check the actual diff and Live state entry against them. Three outcomes: in-scope → proceed; clearly out-of-scope and unwanted → reject and respawn; **out-of-scope but plausibly valuable → consult the operator before merging**. Don't accept drift on the agent's behalf, even good drift. Orchestration without verification is just delegation.
+20. **Kill and respawn over heroic intervention.** If an agent goes sideways, kill it, tighten the task description in the plan, and respawn. Don't try to course-correct mid-stream past one or two nudges. This rule applies *after* completion too — if a finished worktree fails any gate, the repair is another spawn, not boss hands on keyboard.
+21. **Re-plan over papering over.** If decomposition is producing collisions, scope creep, merge conflicts, or recurring gate failures, stop and re-plan. A bad plan compounds; a re-plan resets. Re-planning is the boss's escape hatch when respawning the same agent isn't working — never fixing it yourself.
+22. **Never modify operator vision.** Even the top boss leaves it untouched. If the user's intent genuinely changed mid-execution, that's a separate `/mtask` invocation, not an in-flight edit. The vision section is the one piece of the plan that survives unchanged from start to finish.
 
 ---
 
 ## Conflict-handling rules
 
-- **A dev agent hits a locked file**: it stops, logs the need in `.mtask/plan.md` under "Boss attention", and moves on.
-- **Two agents need the same unlocked file**: this is a planning failure. Boss reclaims the file, either re-assigning it to one agent or locking it.
-- **Merge conflict at integration time**: top boss resolves. If conflicts are non-trivial, re-plan rather than papering over.
-- **An agent finishes early**: check the plan for unblocked tasks it could pick up. Update assignments in the plan file before reassigning.
-- **A sub-boss reports its slice can't be cleanly decomposed**: top boss either accepts a flat dev-agent assignment for that slice or re-plans the overall decomposition.
+- **A dev agent hits a locked file**: it stops, logs the need in `.mtask/plan.md` under "Boss attention", and moves on. Boss responds by spawning a dedicated serialized agent for that locked-file change — boss does not edit the locked file itself.
+- **Two agents need the same unlocked file**: this is a planning failure. Boss reclaims the file in the plan, either re-assigning it to one agent or locking it (and queueing a serialized agent if it needs touching).
+- **Merge conflict at integration time**: top boss does **not** hand-resolve hunks. Abort the merge, capture the conflict surface (which files, which hunks), and spawn a fix-it agent that takes both branches as input and produces a clean integration branch — *or* re-plan if conflicts indicate decomposition was wrong. Boss writes zero lines of conflict resolution.
+- **An agent finishes early**: check the plan for unblocked tasks it could pick up. Boss updates assignments in `.mtask/plan.md` (plan edits are bookkeeping, allowed) before reassigning.
+- **A sub-boss reports its slice can't be cleanly decomposed**: top boss either accepts a flat dev-agent assignment for that slice or re-plans the overall decomposition. Sub-boss does not start writing the slice itself.
 
 ---
 
