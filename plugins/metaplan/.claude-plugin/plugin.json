@@ -1,0 +1,13 @@
+{
+  "name": "metaplan",
+  "version": "0.1.0",
+  "description": "Process planner for Claude Code. /metaplan decomposes a project into phases and routes each phase to the right installed skill (research, design, orchestration, review) — a plan for how the project plan gets built. Checkpoint mode re-evaluates routing between phases, consults on scope changes with explicit cost, and never executes anything without operator authorization.",
+  "author": {
+    "name": "kap-il",
+    "url": "https://github.com/kap-il"
+  },
+  "homepage": "https://github.com/kap-il/skills",
+  "repository": "https://github.com/kap-il/skills",
+  "license": "MIT",
+  "keywords": ["planning", "meta-planning", "routing", "skills", "orchestration", "phases", "checkpoints", "process"]
+}

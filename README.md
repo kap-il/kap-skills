@@ -69,6 +69,20 @@ Plus the optional **`/mtask-toggle`** session-mode that routes every subsequent 
 
 See the full skill at [`plugins/mtask/skills/mtask/SKILL.md`](plugins/mtask/skills/mtask/SKILL.md).
 
+### `metaplan` — Process planner
+
+A metaplan is a plan for how the project plan gets built. Given a project ("a web-based 3d racing game"), it decomposes the work into phases and routes each phase to the right installed skill — this phase needs research, that one needs design exploration, that one needs an `/mtask dev --del` run — then writes the routing map to `METAPLAN.md` as a cross-session anchor.
+
+- **`/metaplan <project>`** — create mode. Short scoping pass (only questions that change routing), phase map with per-phase route + rationale + CC-session estimates + re-route triggers, proposed phase-1 invocation.
+- **`/metaplan`** — checkpoint mode (when `METAPLAN.md` exists). Closes the finished phase, tests its re-route triggers against what actually happened, re-reads the live skill list, re-routes remaining phases if needed, and composes the next phase's handoff invocation from the prior phase's artifacts.
+- **`/metaplan status`** — report state, no re-eval.
+
+Hard rules: it never executes (the operator authorizes every phase launch, every time), never plans project content (the routed skills do that), and never silently absorbs scope — a distinct addition (say, "we'd have to build our own physics engine") triggers a consult with cost delta and alternatives before the plan changes.
+
+Pairs naturally with `mtask`: metaplan decides *when* a phase warrants parallel orchestration; mtask is *how* that phase runs.
+
+See the full skill at [`plugins/metaplan/skills/metaplan/SKILL.md`](plugins/metaplan/skills/metaplan/SKILL.md).
+
 ## Repo structure
 
 ```
@@ -76,12 +90,18 @@ skills/                                       ← this repo IS the marketplace
 ├── .claude-plugin/
 │   └── marketplace.json                      ← marketplace catalog
 ├── plugins/
-│   └── mtask/                                ← one plugin
+│   ├── mtask/                                ← one plugin
+│   │   ├── .claude-plugin/
+│   │   │   └── plugin.json                   ← plugin manifest
+│   │   └── skills/
+│   │       └── mtask/
+│   │           └── SKILL.md                  ← the skill itself
+│   └── metaplan/
 │       ├── .claude-plugin/
-│       │   └── plugin.json                   ← plugin manifest
+│       │   └── plugin.json
 │       └── skills/
-│           └── mtask/
-│               └── SKILL.md                  ← the skill itself
+│           └── metaplan/
+│               └── SKILL.md
 ├── README.md
 └── LICENSE
 ```

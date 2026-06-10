@@ -13,6 +13,14 @@
       "description": "Multi-agent task orchestration: /mtask for parallel sub-agent orchestration with worktrees, SSOT-anchored plans, and a single integrity gate. /mtask-toggle for session-scoped routing where every prompt becomes an mtask invocation until disabled.",
       "category": "engineering",
       "keywords": ["orchestration", "parallel", "sub-agents", "multi-agent", "delegation", "investigation", "worktrees"]
+    },
+    {
+      "name": "metaplan",
+      "source": "./plugins/metaplan",
+      "version": "0.1.0",
+      "description": "Process planner: /metaplan decomposes a project into phases and routes each phase to the right installed skill, with checkpoint re-evaluation between phases, scope-change consults with explicit cost, and a hard never-execute rule — the operator authorizes every phase launch.",
+      "category": "engineering",
+      "keywords": ["planning", "meta-planning", "routing", "skills", "phases", "checkpoints", "process"]
     }
   ]
 }
